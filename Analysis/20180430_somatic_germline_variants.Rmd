@@ -18,6 +18,8 @@ synLogin()
 
 mut<-read.table(synGet("syn5839666")$path, sep = "\t", header = TRUE, colClasses = "character", stringsAsFactors = TRUE)
 
+cosmic <- read.table(synGet("syn9754614")$path, sep = "\t", header = TRUE, colClasses = "character")
+
 genelist.1027 <- read.csv(synGet("syn12179299")$path, header = F)
 
 mut$chr <- str_extract(mut$Chromosome, "\\d")
@@ -36,7 +38,7 @@ germs <- filter(mut, Mutation_Status == "Germline") %>% filter(Hugo_Symbol %in% 
 # Mutation Summaries
 ## Somatic Mutations
 
-####Plot indicates summary count of germline cNF patient mutations detected in 1027 gene list, ignoring "silent", "intron" and "in frame" mutations.
+####Plot indicates summary count of germline cNF patient mutations detected in 1027 gene list, ignoring "silent", "intron" and "in frame" mutations. There are 9 germline samples in total.
 
 ```{r echo=FALSE, fig.width=8, message=FALSE, warning=FALSE}
 library(DT)
@@ -49,27 +51,26 @@ germs.summary <- germs %>%
   group_by(Hugo_Symbol) %>% 
   add_count() %>% 
   select(Hugo_Symbol, n) %>% 
+  mutate(mutation_rate = n/length(unique(germs$Tumor_Sample_Barcode))) %>% 
   distinct()
   
 p<-ggplot(germs.summary) +
-  geom_bar(aes(x=reorder(Hugo_Symbol, -n), y = n, fill = n), stat = "identity")+
+  geom_bar(aes(x=reorder(Hugo_Symbol, -mutation_rate), y = mutation_rate, fill = mutation_rate), stat = "identity")+
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(x = "Gene", y = "Count")
+  labs(x = "Gene", y = "Mutation Rate")
 
 ggplotly(p)
 ```
 
-#### Sortable table indicating all germline mutations observed in patient samples, filtered to 1027 gene list, but including "silent", "intron" and "in frame" mutations. 
+#### Sortable table indicating all germline mutations observed in patient samples, filtered to 1027 gene list, but including "silent", "intron" and "in frame" mutations. Note: COSMIC status refers to the gene, not the specific mutation.
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
-
-
 datatable(germs)
 ```
 
 
 ## Somatic Mutations
 
-####Plot indicates summary count of somatic cNF mutations detected in 1027 gene list, ignoring "silent", "intron" and "in frame" mutations.
+####Plot indicates summary count of somatic cNF mutations detected in 1027 gene list, ignoring "silent", "intron" and "in frame" mutations. There are 33 tumor samples in total.
 
 ```{r echo=FALSE, fig.width=8, message=FALSE, warning=FALSE}
 
@@ -81,29 +82,30 @@ soms.summary <- soms %>%
   group_by(Hugo_Symbol) %>% 
   add_count() %>% 
   select(Hugo_Symbol, n) %>% 
+  mutate(mutation_rate = n/length(unique(soms$Tumor_Sample_Barcode))) %>% 
   distinct()
   
 p<-ggplot(soms.summary) +
-  geom_bar(aes(x=reorder(Hugo_Symbol, -n), y = n, fill = n), stat = "identity")+
+  geom_bar(aes(x=reorder(Hugo_Symbol, -mutation_rate), y = mutation_rate, fill = mutation_rate), stat = "identity")+
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(x = "Gene", y = "Count")
+  labs(x = "Gene", y = "Mutation Rate")
 
 ggplotly(p)
 ```
 
-#### Sortable table indicating all somatic mutations observed in cNF samples, filtered to 1027 gene list but including "silent", "intron" and "in frame" mutations.  
+#### Sortable table indicating all somatic mutations observed in cNF samples, filtered to 1027 gene list but including "silent", "intron" and "in frame" mutations. Note: COSMIC status refers to the gene, not the specific mutation.
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 datatable(soms)
 ```
 
-```{r synapse message=FALSE, warning=FALSE, include=FALSE}
-this.file <- ""
+```{r  message=FALSE, warning=FALSE, include=FALSE}
+this.file <- "https://raw.githubusercontent.com/allaway/cNF_brosseau_analysis/master/Analysis/20180430_somatic_germline_variants.Rmd"
   
 write.csv(soms,"somatic_mutations_1027.txt")
 write.csv(germs,"germline_mutations_1027.txt")
 
-synStore(File("somatic_mutations_1027.txt",parentId="syn12179946"), used = c("syn5839666", "syn12179299"), executed = this.file)
-synStore(File("germline_mutations_1027.txt",parentId="syn12179946"), used = c("syn5839666", "syn12179299"), executed = this.file)
+synStore(File("somatic_mutations_1027.txt",parentId="syn12179946"), used = c("syn5839666", "syn12179299","syn9754614"), executed = this.file)
+synStore(File("germline_mutations_1027.txt",parentId="syn12179946"), used = c("syn5839666", "syn12179299","syn9754614"), executed = this.file)
 
 germ.annot <- list("resourceType" = "analysis", 
               "analysisType" = "variant calling",
