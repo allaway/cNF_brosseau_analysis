@@ -1,0 +1,184 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(synapser)
+library(sva)
+library(ggplot2)
+library(DT)
+synLogin()
+
+##from dermal nf repo
+try(
+source("../../dNFLandscape/bin/encodeSkinRNASeq.R")
+)
+
+## now get dermal NF data and cluster alongisde
+source("../../dNFLandscape/dermalNF/bin/dermalNFData.R")
+dermals = rna_fpkm_matrix(byIsoform = FALSE)
+
+# count_matrix(stored=TRUE,doNorm=FALSE,minCount=2,doLogNorm=FALSE,doVoomNorm=TRUE)
+skin = getGeneNamesForMatrix(getEncodeSkinMatrix(metric = "FPKM", alignment = "hg19",
+                                                 doVoomNorm = FALSE))
+over = intersect(rownames(dermals), rownames(skin))
+
+
+## which annotation should we do? Are they really just duplicates of one another?
+
+## step 1 - just combine all
+comb = cbind(dermals[over, ], skin[over, ])
+
+## step 2, remove values below a particular FPKM, let's say 0.1 - for ALL genes
+expr <- 1:nrow(comb)  ##which(apply(comb,1,function(x) all(x>0.2)))
+expr <- setdiff(expr, expr[union(grep("MIR", rownames(comb)[expr]), grep("SNO", rownames(comb)[expr]))])
+
+## step 3, normalize
+require(limma)
+comb.norm = data.frame(voomWithQualityWeights(comb[expr, ])$E)
+comb.norm$Gene = rownames(comb.norm)
+comb.norm2 = comb.norm[1:66]
+comb.norm2 <- as.matrix(comb.norm2)
+
+encode_batches <- read.table(synGet("syn6023670")@filePath, sep = "\t", header= T) %>% 
+  filter(File.accession %in% colnames(comb.norm2)) %>% 
+  select(File.accession, Experiment.accession) %>%
+  mutate(batch = as.numeric(droplevels(Experiment.accession))) %>% 
+  select(1,3)
+
+batch<-tibble(colnames(comb.norm2)[1:33], rep(17, 33)) %>% 
+  set_names(c("File.accession", "batch")) %>% 
+  bind_rows(encode_batches)
+
+batch$diff <- c(rep("tumor", 33), rep("normal", 33))
+
+
+combat_batch <- ComBat(comb.norm2, batch$batch) 
+combat_2batch <- ComBat(comb.norm2, batch$diff) 
+```
+
+#no ComBat
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pca <- prcomp(t(comb.norm2))
+
+plotpca <- select(as.data.frame(pca$x), 1:2) %>% 
+  mutate(color = as.factor(batch$batch))
+
+ggplot(plotpca) +
+  geom_point(aes(x=PC1, y=PC2, color = color)) +
+  scale_color_discrete()
+```
+
+##with ComBat 18 batches
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pca <- prcomp(t(combat))
+
+plotpca <- select(as.data.frame(pca$x), 1:2) %>% 
+  mutate(color = as.factor(batch$batch))
+
+ggplot(plotpca) +
+  geom_point(aes(x=PC1, y=PC2, color = color)) +
+  scale_color_discrete()
+
+
+```
+
+##with ComBat 2 batches
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pca <- prcomp(t(combat_2batch))
+
+plotpca <- select(as.data.frame(pca$x), 1:2) %>% 
+  mutate(color = as.factor(batch$batch))
+
+ggplot(plotpca) +
+  geom_point(aes(x=PC1, y=PC2, color = color)) +
+  scale_color_discrete()
+
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+norm.df<-tidyr::gather(comb.norm,"Sample","Expression",1:(ncol(comb.norm)-1))
+
+samps<-getSampleNamesForMatrix(skin) %>% rownames_to_column("Patient")
+
+pt.info <- synapser::synTableQuery("SELECT * FROM syn7342635", resultsAs="csv")$filepath %>%
+  read.csv(.) %>% 
+  select(-1,-2) %>% 
+  mutate(Patient = as.character(Patient))
+
+map <- read.table(synapser::synGet("syn5012410")$path, header = T, sep = "\t") %>% 
+  select(Sample, Description) %>% 
+  mutate(Patient = gsub("CT0+", "", Description)) %>% 
+  mutate(Patient = as.character(gsub("\\s\\d+", "", Patient))) %>% 
+  left_join(pt.info)
+
+##full patient annotation
+pat.df<-data.frame(Source=c(rep('dermalNF',nrow(map)),as.character(samps$Sample)),
+               Gender=c(tolower(as.character(map$Gender)),as.character(samps$Sex)),
+               Age=c(as.character(map$Age),sapply(as.character(samps$Age),function(x) gsub(' year','',x))),
+               Sample=c(make.names(map$Sample),c(samps$Patient)),
+               Library=c(rep('polyadenylated mRNA',ncol(dermals)),as.character(samps$Library)))
+
+##keep expresison matrix around
+dm<-pat.df[,c("Source","Gender","Library")]
+rownames(pat.df)<-pat.df$Sample
+dm$Source<-as.character(dm$Source)
+dm$Source[which(dm$Source!='dermalNF')]<-'ENCODESkin'
+dm$Source<-as.factor(dm$Source)
+rownames(dm)<-colnames(comb.norm2)
+
+design<-model.matrix(~Source+Gender+Library,dm)
+fit <- lmFit(comb.norm2, design)
+fit <- eBayes(fit)
+source.tab <- topTable(fit, coef='SourceENCODESkin',number=Inf,adjust.method='BY')
+
+################
+dm<-pat.df[,c("Source","Gender","Library")]
+rownames(pat.df)<-pat.df$Sample
+dm$Source<-as.character(dm$Source)
+dm$Source[which(dm$Source!='dermalNF')]<-'ENCODESkin'
+dm$Source<-as.factor(dm$Source)
+rownames(dm)<-colnames(combat_batch)
+
+design<-model.matrix(~Source+Gender+Library,dm)
+fit <- lmFit(combat_batch, design)
+fit <- eBayes(fit)
+source.tab.2 <- topTable(fit, coef='SourceENCODESkin',number=Inf,adjust.method='BY')
+
+################
+dm<-pat.df[,c("Source","Gender","Library")]
+rownames(pat.df)<-pat.df$Sample
+dm$Source<-as.character(dm$Source)
+dm$Source[which(dm$Source!='dermalNF')]<-'ENCODESkin'
+dm$Source<-as.factor(dm$Source)
+rownames(dm)<-colnames(combat_2batch)
+
+design<-model.matrix(~Source+Gender+Library,dm)
+fit <- lmFit(combat_2batch, design)
+fit <- eBayes(fit)
+source.tab.3 <- topTable(fit, coef='SourceENCODESkin',number=Inf,adjust.method='BY')
+
+```
+
+####DE genes with ComBat normalization
+```{r}
+data.table(source.tab)
+```
+
+####DE genes with 18-batch normalization
+```{r}
+data.table(source.tab.2)
+```
+
+####DE genes with 2-batch normalization
+```{r}
+data.table(source.tab.3)
+```
