@@ -13,15 +13,15 @@ output:
     fig_height: 3
     fig_width: 5
 ---
-```{r}
 
-```
 
 ```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "/Users/rallaway/Documents/Projects/cNF_brousseau_analysis")
 library(tidyverse)
 library(synapser)
 library(DT)
 synLogin()
+this.file = "https://raw.githubusercontent.com/allaway/cNF_brosseau_analysis/master/Analysis/20180510ExpressionCutoff.Rmd"
 ```
 
 ```{r message=FALSE, warning=FALSE, include=FALSE}
@@ -40,13 +40,17 @@ rna2$greaterThan0.1FPKM[rna2$rowMeans<0.1] <- FALSE
 rna2 <- rna2 %>% select(-rowMeans)
 
 ```
-
+Brief description of analysis:
+Took normalized FPKM values from cNF data repository (syn5579598), filtered for those in the 1027 Brosseau gene list (1003 of which existed in the RNA seq data) and calculated mean FPKM for each gene across all 33 tumors. Any gene with a mean FPKM of 0.1 or less was considered to be non-expressing for that gene (arbitrary, but not uncommon threshold), and assigned "FALSE" in the following table. Anything with a "TRUE" value has greater than 0.1 FPKM. The mean FPKMs are not comparable from gene to gene, and therefore were not included in the final table.   
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
+
 datatable(rna2)
+```
 
-write.table("1027GeneList_in_cNF-FPKMCutoff.txt", sep = "\t", row.names = F)
+```{r message=FALSE, warning=FALSE, include=FALSE}
+write.table(rna2, "Analysis/1027GeneList_in_cNF-FPKMCutoff.txt", sep = "\t", row.names = F)
 
-synStore(File("1027GeneList_in_cNF-FPKMCutoff.txt", parentId = "syn12192741"), 
+synStore(File("Analysis/1027GeneList_in_cNF-FPKMCutoff.txt", parentId = "syn12192741"), 
          used = c("syn12179299","syn5579598"), executed = this.file)
 
 annot <- list("resourceType" = "analysis", 
@@ -54,6 +58,10 @@ annot <- list("resourceType" = "analysis",
                   "tumorType" = "Neurofibroma Cutaneous",
                   "assay" = "rnaSeq",
                   "diagnosis" = "Neurofibromatosis 1")
+synSetAnnotations("syn12213038", annot)
+
+##knit and upload in web ui, set annotations for this file within it's own markdown. trippy
+synSetAnnotations("syn12213044", annot)
 ```
 
 
