@@ -1,0 +1,60 @@
+---
+title: "cNF expression summary"
+author: "Robert Allaway"
+date: "May 10 2018"
+output: 
+  html_document:
+    fig_height: 3
+    fig_width: 5
+  pdf_document:
+    fig_height: 3
+    fig_width: 5
+  word_document:
+    fig_height: 3
+    fig_width: 5
+---
+```{r}
+
+```
+
+```{r, setup, include=FALSE}
+library(tidyverse)
+library(synapser)
+library(DT)
+synLogin()
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+genelist.1027 <- read.csv(synGet("syn12179299")$path, header = F)
+
+rna <- read.table(synGet("syn5579598")$path, sep = "\t", header = T) %>%
+  rownames_to_column("gene") %>% 
+  filter(gene %in% genelist.1027$V1)
+
+rna2 <- rna$gene %>% as.data.frame() %>% set_names(c("HUGO_Gene"))
+rna2$rowMeans <- rowMeans(rna[,-1])
+
+rna2$greaterThan0.1FPKM<- TRUE
+rna2$greaterThan0.1FPKM[rna2$rowMeans<0.1] <- FALSE
+
+rna2 <- rna2 %>% select(-rowMeans)
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+datatable(rna2)
+
+write.table("1027GeneList_in_cNF-FPKMCutoff.txt", sep = "\t", row.names = F)
+
+synStore(File("1027GeneList_in_cNF-FPKMCutoff.txt", parentId = "syn12192741"), 
+         used = c("syn12179299","syn5579598"), executed = this.file)
+
+annot <- list("resourceType" = "analysis", 
+                  "analysisType" = "expression cutoff",
+                  "tumorType" = "Neurofibroma Cutaneous",
+                  "assay" = "rnaSeq",
+                  "diagnosis" = "Neurofibromatosis 1")
+```
+
+
+  

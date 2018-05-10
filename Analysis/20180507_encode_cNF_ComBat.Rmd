@@ -76,7 +76,7 @@ ggplot(plotpca) +
 
 ##with ComBat 18 batches
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
-pca <- prcomp(t(combat))
+pca <- prcomp(t(combat_batch))
 
 plotpca <- select(as.data.frame(pca$x), 1:2) %>% 
   mutate(color = as.factor(batch$batch))
@@ -138,7 +138,8 @@ rownames(dm)<-colnames(comb.norm2)
 design<-model.matrix(~Source+Gender+Library,dm)
 fit <- lmFit(comb.norm2, design)
 fit <- eBayes(fit)
-source.tab <- topTable(fit, coef='SourceENCODESkin',number=Inf,adjust.method='BY')
+source.tab <- topTable(fit, coef='SourceENCODESkin',number=Inf,adjust.method='BY')%>% 
+  rownames_to_column("gene")
 
 ################
 dm<-pat.df[,c("Source","Gender","Library")]
@@ -151,7 +152,8 @@ rownames(dm)<-colnames(combat_batch)
 design<-model.matrix(~Source+Gender+Library,dm)
 fit <- lmFit(combat_batch, design)
 fit <- eBayes(fit)
-source.tab.2 <- topTable(fit, coef='SourceENCODESkin',number=Inf,adjust.method='BY')
+source.tab.2 <- topTable(fit, coef='SourceENCODESkin',number=Inf,adjust.method='BY')%>% 
+  rownames_to_column("gene")
 
 ################
 dm<-pat.df[,c("Source","Gender","Library")]
@@ -164,21 +166,22 @@ rownames(dm)<-colnames(combat_2batch)
 design<-model.matrix(~Source+Gender+Library,dm)
 fit <- lmFit(combat_2batch, design)
 fit <- eBayes(fit)
-source.tab.3 <- topTable(fit, coef='SourceENCODESkin',number=Inf,adjust.method='BY')
+source.tab.3 <- topTable(fit, coef='SourceENCODESkin',number=Inf,adjust.method='BY') %>% 
+  rownames_to_column("gene")
 
 ```
 
 ####DE genes with ComBat normalization
-```{r}
+```{r echo=FALSE}
 data.table(source.tab)
 ```
 
 ####DE genes with 18-batch normalization
-```{r}
+```{r echo=FALSE}
 data.table(source.tab.2)
 ```
 
 ####DE genes with 2-batch normalization
-```{r}
+```{r echo=FALSE}
 data.table(source.tab.3)
 ```
