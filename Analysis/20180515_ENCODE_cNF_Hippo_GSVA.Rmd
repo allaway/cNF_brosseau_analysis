@@ -1,0 +1,129 @@
+---
+title:  "20180515 ENCODE-cNF (Hippo GSVA)"
+output: html_document
+---
+
+In order to assess hippo signaling in cNF samples on a expression basis, I used Gene Set Variation Analysis (GSVA) described by Hanzelman, Castelo and Guinney (2013): https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3618321/
+
+This method determines the expression of an input pathway or pathways on a single-sample basis. In addition, the method uses rank-based gene expression to determine pathway activity, enabling the comparison of pathway activity across samples. 
+
+I used expression data for 33 cNFs from the CTF resource and 33 ENCODE samples from skin-based cell types (whole skin, fibroblasts, melanocytes, keratinocytes, etc) to compare, and performed GSVA using 3 Hippo-annotated pathways from MSigDB: "CORDENONSI_YAP_CONSERVED_SIGNATURE," "GO_HIPPO_SIGNALING," and "REACTOME_SIGNALING_BY_HIPPO." The resulting data are plotted on a heatmap here: 
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(synapser)
+library(enrichR)
+library(GSEABase)
+library(GSVA)
+library(DT)
+library(pheatmap)
+synLogin()
+
+##from dermal nf repo
+try(
+source("../../dNFLandscape/bin/encodeSkinRNASeq.R")
+)
+
+## now get dermal NF data and cluster alongisde
+source("../../dNFLandscape/dermalNF/bin/dermalNFData.R")
+dermals = rna_fpkm_matrix(byIsoform = FALSE)
+
+# count_matrix(stored=TRUE,doNorm=FALSE,minCount=2,doLogNorm=FALSE,doVoomNorm=TRUE)
+skin = getGeneNamesForMatrix(getEncodeSkinMatrix(metric = "FPKM", alignment = "hg19",
+                                                 doVoomNorm = FALSE))
+over = intersect(rownames(dermals), rownames(skin))
+
+
+## which annotation should we do? Are they really just duplicates of one another?
+
+## step 1 - just combine all
+comb = cbind(dermals[over, ], skin[over, ])
+
+## step 2, remove values below a particular FPKM, let's say 0.1 - for ALL genes
+expr <- 1:nrow(comb)  ##which(apply(comb,1,function(x) all(x>0.2)))
+expr <- setdiff(expr, expr[union(grep("MIR", rownames(comb)[expr]), grep("SNO", rownames(comb)[expr]))])
+
+comb <- (comb[expr, ])
+ 
+encode_batches <- read.table(synGet("syn6023670")@filePath, sep = "\t", header= T) %>% 
+  filter(File.accession %in% colnames(comb)) %>% 
+  dplyr::select(File.accession, Biosample.term.name) %>% 
+  set_names(c("Sample","ID"))
+ 
+map <- read.table(synapser::synGet("syn5012410")$path, header = T, sep = "\t") %>% 
+  dplyr::select(Sample, Description) %>% 
+  mutate(Patient = gsub("CT0+", "patient ", Description)) %>% 
+  mutate(Patient = as.character(gsub("\\s0+", " tumor ", Patient))) %>% 
+  mutate(Sample = make.names(Sample)) %>% 
+  dplyr::select(Sample, Patient) %>% 
+  set_names(c("Sample","ID")) %>% 
+  bind_rows(encode_batches)
+
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+setwd("~/Documents/Projects/cNF_brousseau_analysis")
+
+first <- getGmt("Data/CORDENONSI_YAP_CONSERVED_SIGNATURE.gmt")
+second <- getGmt("Data/GO_HIPPO_SIGNALING.gmt")
+third <- getGmt("Data/REACTOME_SIGNALING_BY_HIPPO.gmt")
+yapup <- getGmt("Data/YAP1_UP.gmt")
+yapdn <- getGmt("Data/YAP1_DN.gmt")
+mast_v2 <- getGmt("Data/mast_v2.gmt")
+
+hippo.targets <- GeneSet(c("AREG","AXL","BIRC2","BIRC5",
+                         "CCND1","CTGF","CYR61","FGF1",
+                         "FOXM1","MCL1"), setName = "HIPPO_DOWNSTREAM_BROSSEAU",
+                         setIdentifier = "null")
+
+
+hippo.mast.gmt <- GeneSetCollection(list(first@.Data[[1]],
+                                 second@.Data[[1]],
+                                 third@.Data[[1]],
+                                 yapup@.Data[[1]],
+                                 yapdn@.Data[[1]],
+                                 hippo.targets,
+                                 mast_v2@.Data[[1]],
+                                 mast_v2@.Data[[2]],
+                                 mast_v2@.Data[[3]],
+                                 mast_v2@.Data[[4]],
+                                 mast_v2@.Data[[5]],
+                                 mast_v2@.Data[[6]]))
+
+comb.ordered <- comb[colnames(comb) %in% map$Sample] %>% as.matrix()
+
+res.gsva <-gsva(comb.ordered,hippo.mast.gmt, method = "gsva", rnaseq = T)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+svg("hippo_pathway_heatmap.svg", width = 10, height = 5)
+pheatmap(res.gsva$es.obs, cluster_rows = F, cellwidth = 5, cellheight = 5, labels_col = map$ID, 
+         fontsize_col = 6, fontsize_row = 5, gaps_row = 6, border_color = NA)
+dev.off()
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=8}
+pheatmap(res.gsva$es.obs, cluster_rows = F, cellwidth = 5, cellheight = 5, labels_col = map$ID, 
+         fontsize_col = 6, fontsize_row = 5, gaps_row = 6, border_color = NA)
+
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+this.file <- "https://raw.githubusercontent.com/allaway/cNF_brosseau_analysis/master/Analysis/20180515_ENCODE_cNF_Hippo_GSVA.Rmd"
+
+synStore(File("hippo_pathway_heatmap.svg",parentId="syn12232461"), used = c("syn5012410","syn5012410", "syn12184142", "syn6023670", "syn5579598"), executed = this.file)
+
+annot <- list("resourceType" = "analysis", 
+              "analysisType" = "Enrichment analysis",
+              "tumorType" = "Neurofibroma Cutaneous",
+              "assay" = "rnaSeq",
+              "diagnosis" = "Neurofibromatosis 1",
+              "visualizationMethod" = "heatmap",
+              "enrichmentMethod" = "GSVA",
+              "clusteringMethod" = "hierarchical clustering")
+
+synSetAnnotations("syn12241210", annot)
+# synSetAnnotations("", annot)
+
+```
+

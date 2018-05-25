@@ -1,0 +1,128 @@
+---
+title: "20180516 ENCODE-cNF (Matrisome GSVA)"
+output: html_document
+---
+
+In order to assess matrisome signaling in cNF samples on a expression basis, I used Gene Set Variation Analysis (GSVA) described by Hanzelman, Castelo and Guinney (2013): https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3618321/
+
+This method determines the expression of an input pathway or pathways on a single-sample basis. In addition, the method uses rank-based gene expression to determine pathway activity, enabling the comparison of pathway activity across samples. 
+
+I used expression data for 33 cNFs from the CTF resource and 33 ENCODE samples from skin-based cell types (whole skin, fibroblasts, melanocytes, keratinocytes, etc) to compare, and performed GSVA using 10 matrisome-associated pathways from MSigDB. The resulting data are plotted on a heatmap here: 
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(synapser)
+library(enrichR)
+library(GSEABase)
+library(GSVA)
+library(DT)
+library(pheatmap)
+synLogin()
+
+##from dermal nf repo
+try(
+source("../../dNFLandscape/bin/encodeSkinRNASeq.R")
+)
+
+## now get dermal NF data and cluster alongisde
+source("../../dNFLandscape/dermalNF/bin/dermalNFData.R")
+dermals = rna_fpkm_matrix(byIsoform = FALSE)
+
+# count_matrix(stored=TRUE,doNorm=FALSE,minCount=2,doLogNorm=FALSE,doVoomNorm=TRUE)
+skin = getGeneNamesForMatrix(getEncodeSkinMatrix(metric = "FPKM", alignment = "hg19",
+                                                 doVoomNorm = FALSE))
+over = intersect(rownames(dermals), rownames(skin))
+
+
+## which annotation should we do? Are they really just duplicates of one another?
+
+## step 1 - just combine all
+comb = cbind(dermals[over, ], skin[over, ])
+
+## step 2, remove values below a particular FPKM, let's say 0.1 - for ALL genes
+expr <- 1:nrow(comb)  ##which(apply(comb,1,function(x) all(x>0.2)))
+expr <- setdiff(expr, expr[union(grep("MIR", rownames(comb)[expr]), grep("SNO", rownames(comb)[expr]))])
+
+comb <- (comb[expr, ])
+ 
+encode_batches <- read.table(synGet("syn6023670")@filePath, sep = "\t", header= T) %>% 
+  filter(File.accession %in% colnames(comb)) %>% 
+  dplyr::select(File.accession, Biosample.term.name) %>% 
+  set_names(c("Sample","ID"))
+ 
+map <- read.table(synapser::synGet("syn5012410")$path, header = T, sep = "\t") %>% 
+  dplyr::select(Sample, Description) %>% 
+  mutate(Patient = gsub("CT0+", "patient ", Description)) %>% 
+  mutate(Patient = as.character(gsub("\\s0+", " tumor ", Patient))) %>% 
+  mutate(Sample = make.names(Sample)) %>% 
+  dplyr::select(Sample, Patient) %>% 
+  set_names(c("Sample","ID")) %>% 
+  bind_rows(encode_batches)
+
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+setwd("~/Documents/Projects/cNF_brousseau_analysis")
+
+matrisome.gmt <- getGmt("Data/matrisome.gmt")
+mast <- getGmt("Data/mast.gmt")
+schwann <- getGmt("Data/schwann.gmt")
+
+matrisome.mast.gmt <- GeneSetCollection(list(matrisome.gmt@.Data[[1]],
+                                             matrisome.gmt@.Data[[2]],
+                                             matrisome.gmt@.Data[[3]],
+                                             matrisome.gmt@.Data[[4]],
+                                             matrisome.gmt@.Data[[5]],
+                                             matrisome.gmt@.Data[[6]],
+                                             matrisome.gmt@.Data[[7]],
+                                             matrisome.gmt@.Data[[8]],
+                                             matrisome.gmt@.Data[[9]],
+                                             matrisome.gmt@.Data[[10]],
+                                             mast@.Data[[1]],
+                                             schwann@.Data[[1]],
+                                             schwann@.Data[[2]],
+                                             schwann@.Data[[3]],
+                                             schwann@.Data[[4]],
+                                             schwann@.Data[[5]],
+                                             schwann@.Data[[6]],
+                                             schwann@.Data[[7]],
+                                             schwann@.Data[[8]],
+                                             schwann@.Data[[9]]))
+
+comb.ordered <- comb[colnames(comb) %in% map$Sample] %>% as.matrix()
+
+res.gsva <-gsva(comb.ordered,matrisome.mast.gmt, method = "gsva", rnaseq = T)
+
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, fig.width=8}
+svg("matrisome_pathway_heatmap.svg", width = 8, height = 8)
+pheatmap(res.gsva$es.obs, cluster_rows = F, cellwidth = 5, cellheight = 5, labels_col = map$ID, 
+         fontsize_col = 6, fontsize_row = 5, gaps_row = c(10, 11), border_color = NA)
+dev.off()
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=8}
+pheatmap(res.gsva$es.obs, cluster_rows = F, cellwidth = 5, cellheight = 5, labels_col = map$ID, 
+         fontsize_col = 6, fontsize_row = 5, gaps_row = c(10, 11), border_color = NA)
+
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+this.file <- "https://raw.githubusercontent.com/allaway/cNF_brosseau_analysis/master/Analysis/20180515_ENCODE_cNF_matrisome_GSVA.Rmd"
+
+synStore(File("matrisome_pathway_heatmap.svg",parentId="syn12232461"), used = c("syn5012410","syn5012410", "syn12184142", "syn6023670", "syn5579598"), executed = this.file)
+
+annot <- list("resourceType" = "analysis", 
+              "analysisType" = "Enrichment analysis",
+              "tumorType" = "Neurofibroma Cutaneous",
+              "assay" = "rnaSeq",
+              "diagnosis" = "Neurofibromatosis 1",
+              "visualizationMethod" = "heatmap",
+              "enrichmentMethod" = "GSVA",
+              "clusteringMethod" = "hierarchical clustering")
+
+synSetAnnotations("syn12241506", annot)
+synSetAnnotations("syn12242901", annot)
+
+```
