@@ -31,7 +31,8 @@ hippo_genes <- hippo_kegg[[1]]$GENE[is.even(1:length(hippo_kegg[[1]]$GENE))] %>%
 
 gene.list.51 <- read.csv("../Data/51_GENE_LIST.csv", header = F)
 
-hippo_genes <- union(gene.list.51$V1, hippo_genes)
+hippo_genes <- union(gene.list.51$V1, hippo_genes) 
+hippo_genes <- hippo_genes[hippo_genes != "TGFB1"]
 ##Get all mutation data for cNF 
 mut<-read.table(synGet("syn5839666")$path, sep = "\t", header = TRUE, colClasses = "character", stringsAsFactors = TRUE) 
 
@@ -45,6 +46,18 @@ soms <- filter(mut, Mutation_Status == "Somatic") %>% filter(Hugo_Symbol %in% hi
 germs <- filter(mut, Mutation_Status == "Germline") %>% filter(Hugo_Symbol %in% hippo_genes)
 # 
 # cols <- c("#17B890", "#FF6F59", "#D7263D", "black", "black", "black", "black", "#A7BBEC", "#FFF07C", "black", "black", "black", "black", "black", "black", "black", "black", "black")
+
+all.genes <- 	20376 ##grCH38 number of coding genes
+
+burd<- sapply(unique(mut$Tumor_Sample_Barcode), function(i){
+  foo <- mut %>% filter(Tumor_Sample_Barcode==i)
+  bar <- foo %>% filter(Hugo_Symbol %in% hippo_genes)
+  overall_burden <- signif((length(unique(foo$Hugo_Symbol))/all.genes)*100,3)
+  hippo_burden <- signif((length(unique(bar$Hugo_Symbol))/length(hippo_genes))*100,3)
+  burd <- c("barcode" = i, "overall_burden" = overall_burden, "hippo_burden"= hippo_burden)
+  burd
+})
+burd <- t(burd)
 ```
 
 I filtered the data to evaluate whether mutations in hippo pathway genes show up in cNF somatic data. Very few mutations show up, except for patient 8 tumor 9. This sample has a very high somatic mutation rate and should probably be disregarded as atypical. The majority of mutations observed are silent. 
