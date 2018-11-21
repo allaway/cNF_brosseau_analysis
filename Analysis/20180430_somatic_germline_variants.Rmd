@@ -16,7 +16,7 @@ library(plotly)
 
 synLogin()
 
-mut<-read.table(synGet("syn5839666")$path, sep = "\t", header = TRUE, colClasses = "character", stringsAsFactors = TRUE)
+mut<-read.table(synGet("syn5839666")$path, sep = "\t", header = TRUE, stringsAsFactors = TRUE)
 
 cosmic <- read.table(synGet("syn9754614")$path, sep = "\t", header = TRUE, colClasses = "character")
 
@@ -29,9 +29,22 @@ names(mut)[names(mut)=="Sample_ID"] <- "Tumor_Sample_Barcode"
 mut$cosmic[mut$Hugo_Symbol %in% cosmic$Gene.Symbol] <- "T"
 mut$cosmic[!mut$Hugo_Symbol %in% cosmic$Gene.Symbol] <- "F"
 
-soms <- filter(mut, Mutation_Status == "Somatic") %>% filter(Hugo_Symbol %in% genelist.1027$V1)
+annotation <- read.table(synGet("syn12685526")$path, sep = "\t", header = T, na.strings = c(".")) %>% 
+  mutate(Chromosome = paste0("chr",Chr)) %>% 
+  dplyr::rename(Start_Position = Start, End_Position = End, Reference_Allele = Ref, Variant_Allele = Alt) %>% 
+  distinct() %>% 
+  select(-Chr) %>% 
+  full_join(mut) %>% 
+  select(Hugo_Symbol, Protein_Change,
+         Tumor_Sample_Barcode, Mutation_Status, Chromosome, Start_Position,
+         End_Position, Reference_Allele, Variant_Allele, Variant_Classification, ExAC_ALL, gnomAD_genome_ALL, avsnp147, ALL.sites.2015_08) 
 
-germs <- filter(mut, Mutation_Status == "Germline") %>% filter(Hugo_Symbol %in% genelist.1027$V1)
+soms <- filter(annotation, Mutation_Status == "Somatic") %>% filter(Hugo_Symbol %in% genelist.1027$V1)
+
+germs <- filter(annotation, Mutation_Status == "Germline") %>% filter(Hugo_Symbol %in% genelist.1027$V1)
+
+
+
 
 ```
 
